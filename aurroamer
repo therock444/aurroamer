@@ -150,6 +150,7 @@ if [[ "${1-}" == "--refresh" || "${1-}" == "-r" ]]; then
     echo "refreshing package list"
     aurpackages=$(mktemp)
     download_aur_list
+    pacman -Slq > "$repo_cache"
     echo "cache refreshed"
     exit 0
 fi
@@ -180,7 +181,7 @@ EOF
 fi
 
 if [[ "${1-}" == "--clear" || "${1-}" == "-c" ]]; then
-    echo "deleting cached package list"
+    echo "deleted cached package list"
     rm -f "$cachedaur" "$repo_cache" 2>/dev/null || echo "no cache to delete, or other error"
     exit 0
 fi

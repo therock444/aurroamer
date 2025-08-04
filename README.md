@@ -11,7 +11,8 @@ aurroamer is a terminal-based browser for AUR and official arch repo packages
 - favorites system
 - optional post-install hooks
 - ignored system
-
+- group system to have groups ready to bulk install or manage
+- snapshot system for backups of all explicitly installed packages
 ## requirements
 
 - `bash`

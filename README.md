@@ -40,3 +40,5 @@ aurroamer --help
 this is 900+ lines of bash and expanding, and it still works (as far as i know)
 no, i cant tell you why i made this in bash of all things
 refrain from looking too closely
+### stability notice
+version 3.0.0-3 is feature complete and mostly stable, unless upstream changes force updates (same with reproducible bugs not found yet), this version is considered mostly frozen, vontributions or patches welcome, but sanity is not guaranteed

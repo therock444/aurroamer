@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: MIT
 set -euo pipefail
 
-VERSION="2.1.0-1"
+VERSION="2.2.0-1"
 if [[ "${1-}" == "--version" || "${1-}" == "-v" ]]; then
     echo "aurroamer $VERSION"
     exit 0
@@ -26,6 +26,8 @@ mkdir -p "$hooks_dir"
 touch "$favorites_file"
 touch "$ignore_file"
 
+mode=""
+
 cleanup() {
     rm -f "$aurpackages" "$repopackages" "$total"
 }
@@ -44,6 +46,13 @@ download_aur_list() {
 
 load_aur_cache() {
     if [[ -f "$cachedaur" ]]; then
+        last_modified_days=$(($(date +%s) - $(stat -c %Y "$cachedaur")))
+        if (( last_modified_days > 259200 )); then  # 3 days = 259200 seconds
+            echo "aur cache older than 3 days, refreshing"
+            download_aur_list
+            return
+        fi
+
         if [[ "$fastmode" == true ]]; then
             cp "$cachedaur" "$aurpackages"
             echo "aur cache last updated: $(stat -c %y "$cachedaur")"
@@ -107,7 +116,7 @@ generate_fzf_input() {
             ;;
         search:*)
             search_term="${mode#search:}"
-            fzf_input=$( (awk '{printf "[aur]      %s\n", $0}' "$aurpackages"; awk '{printf "[official] %s\n", $0}' "$repopackages") | grep -iF "$search_term" )
+            fzf_input=$( (awk '{printf "[aur]      %s\n", $0}' "$aurpackages"; awk '{printf "[official] %s\n", $0}' "$repopackages") | grep -iF "$search_term" || true )
             ;;
         *)
             fzf_input=""
@@ -187,7 +196,11 @@ if [[ "${1-}" == "--clear" || "${1-}" == "-c" ]]; then
 fi
 
 if [[ "${1-}" == "--preview" || "${1-}" == "-p" ]]; then
-    pkgname="$2"
+    if [[ -z "${2-}" ]]; then
+        echo "error: --preview requires a package name"
+        exit 1
+    fi
+    pkgname=$2""
     if pacman -Si "$pkgname" &>/dev/null; then
         preview_package "[official]" "$pkgname"
     elif grep -qxF "$pkgname" "$cachedaur"; then
@@ -200,7 +213,12 @@ if [[ "${1-}" == "--preview" || "${1-}" == "-p" ]]; then
 fi
 
 if [[ "${1-}" == "--install" || "${1-}" == "-i" ]]; then
+    if [[ -z "${2-}" ]]; then
+        echo "error: --install requires a package name"
+        exit 1
+    fi
     pkgname="$2"
+
     if pacman -Si "$pkgname" &>/dev/null; then
         install_package "[official]" "$pkgname"
     elif grep -qxF "$pkgname" "$cachedaur"; then
@@ -212,7 +230,6 @@ if [[ "${1-}" == "--install" || "${1-}" == "-i" ]]; then
     exit 0
 fi
 
-# Handle --fast mode
 fastmode=false
 if [[ "${1-}" == "--fast" || "${1-}" == "-f" ]]; then
     fastmode=true
@@ -228,7 +245,8 @@ else
         cp "$repo_cache" "$repopackages"
         echo "repo cache last updated: $(stat -c %y "$repo_cache" 2>/dev/null)"
     else
-        echo "repo cache not found. fast mode requires existing cache."
+        echo "repo cache not found, fast mode requires existing cache"
+        echo "tip: run 'aurroamer --refresh' to create the cache first."
         exit 1
     fi
 fi
@@ -278,8 +296,13 @@ echo "aur package count: $aur_count"
 echo "total package count: $total_count"
 
 echo
+
 if [[ "${1-}" == "--search" || "${1-}" == "-s" ]]; then
-    mode="search:$2"
+    if [[ -z "${2-}" ]]; then
+        echo "error: --search requires a term"
+        exit 1
+    fi
+
 else
     echo "browse which packages?"
     echo "1) official only"

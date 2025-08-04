@@ -6,7 +6,7 @@ set -euo pipefail
 
 fastmode=false
 
-VERSION="2.2.0-2"
+VERSION="2.3.0-1"
 if [[ "${1-}" == "--version" || "${1-}" == "-v" ]]; then
     echo "aurroamer $VERSION"
     exit 0
@@ -137,6 +137,7 @@ install_package() {
     local pkgtype="$1"
     local pkgname="$2"
     echo "[installing $pkgname]"
+    run_pre_install_hook "$pkgname"
     if [[ "$pkgtype" == "[official]" ]]; then
         sudo pacman -S "$pkgname"
     elif [[ "$pkgtype" == "[aur]" && -n "$aur_helper" ]]; then
@@ -190,10 +191,36 @@ run_post_install_hook() {
         if [[ "$run_hook" =~ ^[Yy]$ ]]; then
             "$hook"
         else
-            echo "skipping hook"
+            echo "skipping post-install hook"
         fi
     fi
 }
+
+run_pre_install_hook() {
+    local pkgname="$1"
+    local hook="$hooks_dir/pre_install_$pkgname"
+    if [[ -x "$hook" ]]; then
+        echo "pre-install hook found for $pkgname"
+        echo "WARNING: running arbitrary code from $hook"
+        echo "do you want to run this? [y/N]"
+        read -rp ">> " run_hook
+        if [[ "$run_hook" =~ ^[Yy]$ ]]; then
+            "$hook"
+        else
+            echo "skipping pre-install hook"
+        fi
+    fi
+}
+
+if [[ "${1-}" == "--edit-favorites" || "${1-}" == "-ef" ]]; then
+    ${EDITOR:-nano} "$favorites_file"
+    exit
+fi
+
+if [[ "${1-}" == "--edit-ignore" || "${1-}" == "-ei" ]]; then
+    ${EDITOR:-nano} "$ignore_file"
+    exit
+fi
 
 if [[ "${1-}" == "--refresh" || "${1-}" == "-r" ]]; then
     echo "refreshing aur cache"
@@ -211,19 +238,23 @@ if [[ "${1-}" == "--help" || "${1-}" == "-h" ]]; then
 aurroamer - browse AUR and official packages with fzf
 
     usage:
-    aurroamer                    	 launch interactive mode
-    aurroamer --version / -v     	 show installed version
-    aurroamer --help    / -h        	 show this message
-    aurroamer --clear   / -c       	 clears stored package list cache
-    aurroamer --refresh / -r     	 refreshes the cache
-    aurroamer --search  / -s <term>      search for packages by name
-    aurroamer --preview / -p <name>      preview given package info
-    aurroamer --install / -i <name>      install given package
-    aurroamer --fast    / -f             uses both caches even if theyre old
+
+    aurroamer                    	         launch interactive mode
+    aurroamer --version         / -v     	 show installed version
+    aurroamer --help            / -h             show this message
+    aurroamer --clear           / -c             clears stored package list cache
+    aurroamer --refresh         / -r             refreshes the cache
+    aurroamer --search          / -s <term>      search for packages by name
+    aurroamer --preview         / -p <name>      preview given package info
+    aurroamer --install         / -i <name>      install given package
+    aurroamer --fast            / -f             uses both caches even if theyre old
+    aurroamer --edit-ignore     / -ei            open ignore.txt in a text editor
+    aurroamer --edit-favorites  / -ef            open favorites.txt in a text editor
 
   hint: to select multiple packages in fzf press tab
   hint:
   hint: post-install hooks:     ~/.config/aurroamer/hooks.d/post_install_<pkgname>
+  hint: pre-install hooks       ~/.config/aurroamer/hooks.d/pre_install_<pkgname>
   hint: favorites packages:     ~/.config/aurroamer/favorites.txt
   hint: ignored packages:       ~/.config/aurroamer/ignore.txt
 

@@ -10,6 +10,7 @@ aurroamer is a terminal-based browser for AUR and official arch repo packages
 - multi-select with bulk install
 - favorites system
 - optional post-install hooks
+- ignored system
 
 ## requirements
 

@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # aurroamer - package browser in bash, because why not
 # copyright (c) 2025 therock
+# 918 lines, this is bash what am i doing
 # SPDX-License-Identifier: MIT
 set -euo pipefail
 
 fastmode=false
 
-VERSION="3.0.0-2"
+VERSION="3.0.0-3"
 
 if [[ "${1-}" == "--version" || "${1-}" == "-v" ]]; then
     echo "aurroamer $VERSION"
@@ -564,6 +565,7 @@ snapshot managements:
   hint: pre-install hooks       ~/.config/aurroamer/hooks.d/pre_install_<pkgname>
   hint: favorites packages:     ~/.config/aurroamer/favorites.txt
   hint: ignored packages:       ~/.config/aurroamer/ignore.txt
+  hint: this went from ~350 lines to ~920 in a day, i dont know why or how, enjoy, i guess
 
 EOF
     exit 0

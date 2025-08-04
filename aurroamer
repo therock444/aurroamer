@@ -6,7 +6,7 @@ set -euo pipefail
 
 fastmode=false
 
-VERSION="2.3.0-1"
+VERSION="2.3.1-1"
 if [[ "${1-}" == "--version" || "${1-}" == "-v" ]]; then
     echo "aurroamer $VERSION"
     exit 0
@@ -233,6 +233,38 @@ if [[ "${1-}" == "--refresh" || "${1-}" == "-r" ]]; then
     exit 0
 fi
 
+if [[ "${1-}" == "--list-hooks" || "${1-}" == "-lh" ]]; then
+
+    if [[ -n "${2-}" ]]; then
+        hook_path="$hooks_dir/${2}"
+        if [[ ! -e "$hook_path" ]]; then
+            echo "hook '$2' not found in $hooks_dir"
+        elif [[ ! -r "$hook_path" ]]; then
+            echo "hook '$2' exists but is not readable"
+        elif [[ ! -s "$hook_path" ]]; then
+            echo "hook '$2' is empty"
+        else
+            echo "contents of $2:"
+            echo "----------------------------------------"
+            cat "$hook_path"
+            echo "----------------------------------------"
+        fi
+    else
+            echo "hooks with [+] are executable and will run, those with [-] lack executable permissions and won't run"
+            echo
+        for hook in "$hooks_dir"/{pre,post}_install_*; do
+            [[ -e "$hook" ]] || continue
+            if [[ -x "$hook" ]]; then
+                echo "[+] $(basename "$hook")"
+            else
+                echo "[-] $(basename "$hook")"
+            fi
+        done
+    fi
+
+    exit
+fi
+
 if [[ "${1-}" == "--help" || "${1-}" == "-h" ]]; then
     cat <<EOF
 aurroamer - browse AUR and official packages with fzf
@@ -243,13 +275,14 @@ aurroamer - browse AUR and official packages with fzf
     aurroamer --version         / -v     	 show installed version
     aurroamer --help            / -h             show this message
     aurroamer --clear           / -c             clears stored package list cache
-    aurroamer --refresh         / -r             refreshes the cache
-    aurroamer --search          / -s <term>      search for packages by name
+    aurroamer --refresh         / -r             refreshes stored cache
+    aurroamer --search          / -s <term>      search for packages by name (1 and 2 terms supported)
     aurroamer --preview         / -p <name>      preview given package info
     aurroamer --install         / -i <name>      install given package
-    aurroamer --fast            / -f             uses both caches even if theyre old
+    aurroamer --fast            / -f             uses both caches even if theyre old (>3 days)
     aurroamer --edit-ignore     / -ei            open ignore.txt in a text editor
     aurroamer --edit-favorites  / -ef            open favorites.txt in a text editor
+    aurroamer --list-hooks      / -lh <hook>     lists given hook content or all hook names if run with no args
 
   hint: to select multiple packages in fzf press tab
   hint:
@@ -363,9 +396,9 @@ fi
 generate_fzf_input "$mode"
 echo
 while true; do
-    if ! selection=$(echo "$fzf_input" | fzf --prompt="Search >> " --multi); then
-    echo "fzf exited or failed"
-    exit 1
+if ! $(echo "$fzf_input" | fzf --prompt="Search >> " --multi); then
+  echo "fzf exited or failed"
+  exit
 fi
     [[ -z "$selection" ]] && exit 0
 

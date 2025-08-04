@@ -4,7 +4,9 @@
 # SPDX-License-Identifier: MIT
 set -euo pipefail
 
-VERSION="2.1.0-7"
+fastmode=false
+
+VERSION="2.2.0-1"
 if [[ "${1-}" == "--version" || "${1-}" == "-v" ]]; then
     echo "aurroamer $VERSION"
     exit 0
@@ -33,6 +35,18 @@ cleanup() {
 }
 trap 'cleanup; exit 130' INT
 trap 'cleanup' EXIT
+
+detect_aur_helper() {
+    for helper in yay paru trizen pikaur; do
+        if command -v "$helper" > /dev/null; then
+            echo "$helper"
+            return
+        fi
+    done
+    echo ""
+}
+
+aur_helper=$(detect_aur_helper)
 
 load_cache() {
     for source in aur repo; do
@@ -81,7 +95,7 @@ load_cache() {
                 echo "tip: run 'aurroamer --refresh' to create the cache first."
                 exit 1
             fi
-            echo "no cached $source package list found — fetching..."
+            echo "no cached $source package list found"
             echo "$fetch_msg"
             if ! eval "$fetch_cmd"; then
                 echo "failed to fetch $source package list"
@@ -90,6 +104,10 @@ load_cache() {
             cp "$outpath" "$cachefile"
         fi
     done
+    if [[ -s "$aurpackages" && -s "$repopackages" ]]; then
+       grep -vxFf "$repopackages" "$aurpackages" > "${aurpackages}.tmp" &&
+        mv "${aurpackages}.tmp" "$aurpackages"
+    fi
 }
 
 preview_package() {
@@ -131,9 +149,18 @@ generate_fzf_input() {
             fzf_input=$(cat "$favorites_file")
             ;;
         search:*)
-            search_term="${mode#search:}"
-            fzf_input=$( (awk '{printf "[aur]      %s\n", $0}' "$aurpackages"; awk '{printf "[official] %s\n", $0}' "$repopackages") | grep -iF "$search_term" || true )
-            ;;
+    	    search_term="${mode#search:}"
+    	    IFS=' ' read -r -a terms <<< "$search_term"
+    	    fzf_input=$(awk '{printf "[aur]      %s\n", $0}' "$aurpackages"; awk '{printf "[official] %s\n", $0}' "$repopackages")
+    	    for term in "${terms[@]}"; do
+        	fzf_input=$(printf '%s\n' "$fzf_input" | grep -iF -- "$term" || true)
+    	    done
+            if [[ -z "$fzf_input" ]]; then
+            echo "no results found for: $search_term" >&2
+            exit 1
+            fi
+    	    ;;
+
         *)
             fzf_input=""
             ;;
@@ -169,6 +196,7 @@ if [[ "${1-}" == "--refresh" || "${1-}" == "-r" ]]; then
     load_cache > /dev/null
     echo "refreshing repo cache"
     pacman -Slq > "$repo_cache"
+    cp "$repopackages" "$repo_cache"
     echo "cache refreshed"
     exit 0
 fi
@@ -209,16 +237,18 @@ if [[ "${1-}" == "--preview" || "${1-}" == "-p" ]]; then
         echo "error: --preview requires a package name"
         exit 1
     fi
-    pkgname=$2""
+    load_cache
+    pkgname="$2"
     if pacman -Si "$pkgname" &>/dev/null; then
         preview_package "[official]" "$pkgname"
-    elif grep -qxF "$pkgname" "$cachedaur"; then
+        exit
+    elif grep -qxF "$pkgname" "$aurpackages"; then
         preview_package "[aur]" "$pkgname"
+        exit
     else
-        echo "package not found"
+        echo "error: package '$pkgname' not found in cache"
         exit 1
     fi
-    exit 0
 fi
 
 if [[ "${1-}" == "--install" || "${1-}" == "-i" ]]; then
@@ -226,17 +256,18 @@ if [[ "${1-}" == "--install" || "${1-}" == "-i" ]]; then
         echo "error: --install requires a package name"
         exit 1
     fi
+    load_cache
     pkgname="$2"
-
     if pacman -Si "$pkgname" &>/dev/null; then
         install_package "[official]" "$pkgname"
-    elif grep -qxF "$pkgname" "$cachedaur"; then
+        exit
+    elif grep -qxF "$pkgname" "$aurpackages"; then
         install_package "[aur]" "$pkgname"
+        exit
     else
-        echo "package not found"
+        echo "error: package '$pkgname' not found in cache"
         exit 1
     fi
-    exit 0
 fi
 
 fastmode=false
@@ -253,20 +284,10 @@ if ! [ -t 1 ]; then
     exit 1
 fi
 
-detect_aur_helper() {
-    for helper in yay paru trizen pikaur; do
-        if command -v "$helper" > /dev/null; then
-            echo "$helper"
-            return
-        fi
-    done
-    echo ""
-}
-
-aur_helper=$(detect_aur_helper)
-
 require_binary fzf
 require_binary pacman
+require_binary curl
+require_binary gunzip
 
 if [[ -z "$aur_helper" ]]; then
     echo "warning: no supported aur helper found — aur packages cannot be interacted with"
@@ -281,8 +302,8 @@ if [[ -s "$ignore_file" ]]; then
     grep -vxFf "$ignore_file" "$repopackages" > "${repopackages}.tmp" && mv "${repopackages}.tmp" "$repopackages"
 fi
 
-sort -o "$aurpackages" "$aurpackages" > /dev/null
-sort -o "$repopackages" "$repopackages" > /dev/null
+sort -o "$aurpackages" "$aurpackages"
+sort -o "$repopackages" "$repopackages"
 
 aur_count=$(wc -l < "$aurpackages")
 repo_count=$(wc -l < "$repopackages")
@@ -299,7 +320,8 @@ if [[ "${1-}" == "--search" || "${1-}" == "-s" ]]; then
         echo "error: --search requires a term"
         exit 1
     fi
-
+    load_cache
+    mode="search:$2"
 else
     echo "browse which packages?"
     echo "1) official only"
@@ -334,6 +356,8 @@ while true; do
             echo "5) remove all from favorites"
             echo "6) bulk install all"
             echo "7) refresh package list"
+            echo "8) add all to ignore list"
+            echo "9) remove all from ignore list"
             read -rp ">> " choice
 
             case "$choice" in
@@ -409,7 +433,7 @@ while true; do
     	            echo "refreshing package lists"
     		    load_cache
     		    generate_fzf_input "$mode"
-    		    pacman -Slq > "$repopackages"
+    		    pacman -Slq > "$repo_cache"
     		    sort -o "$aurpackages" "$aurpackages"
     	            sort -o "$repopackages" "$repopackages"
     	            generate_fzf_input "$mode"
@@ -417,6 +441,27 @@ while true; do
     		    read -n 1 -s -r
     		    clear
     	  	    ;;
+    	  	8)
+                    clear
+                    for line in "${selected_lines[@]}"; do
+                        pkgname="${line#* }"
+                        pkgname="${pkgname#"${pkgname%%[![:space:]]*}"}"
+                        echo "$pkgname" >> "$ignore_file"
+                    done
+                    sort -u -o "$ignore_file" "$ignore_file"
+                    echo "packages added to ignore list"
+                    read -n 1 -s -r -p "press any key to return"
+                    ;;
+                9)
+                    clear
+                    for line in "${selected_lines[@]}"; do
+                        pkgname="${line#* }"
+                        pkgname="${pkgname#"${pkgname%%[![:space:]]*}"}"
+                        sed -i "\|^$(printf '%s' "$pkgname")\$|d" "$ignore_file"
+                    done
+                    echo "packages removed from ignore list"
+                    read -n 1 -s -r -p "press any key to return"
+                    ;;   
                 *)
                     clear
                     echo "invalid option"
@@ -441,6 +486,8 @@ while true; do
             else
                 echo "5) add to favorites"
             fi
+            echo "7) add to ignore list"
+            echo "8) remove from ignore list"
             read -rp ">> " choice
 
             case "$choice" in

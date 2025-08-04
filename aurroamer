@@ -6,7 +6,7 @@ set -euo pipefail
 
 fastmode=false
 
-VERSION="2.2.0-1"
+VERSION="2.2.0-2"
 if [[ "${1-}" == "--version" || "${1-}" == "-v" ]]; then
     echo "aurroamer $VERSION"
     exit 0
@@ -29,6 +29,18 @@ touch "$favorites_file"
 touch "$ignore_file"
 
 mode=""
+
+require_binary fzf
+require_binary pacman
+require_binary curl
+require_binary gunzip
+	
+require_binary() {
+   if ! command -v "$1" > /dev/null; then
+	echo "error: required binary '$1' is not installed"
+	exit 1
+   fi
+}
 
 cleanup() {
     rm -f "$aurpackages" "$repopackages" "$total"
@@ -183,13 +195,6 @@ run_post_install_hook() {
     fi
 }
 
-require_binary() {
-    if ! command -v "$1" > /dev/null; then
-        echo "error: required binary '$1' is not installed"
-        exit 1
-    fi
-}
-
 if [[ "${1-}" == "--refresh" || "${1-}" == "-r" ]]; then
     echo "refreshing aur cache"
     aurpackages=$(mktemp)
@@ -283,11 +288,6 @@ if ! [ -t 1 ]; then
     echo "error: aurroamer requires an interactive terminal"
     exit 1
 fi
-
-require_binary fzf
-require_binary pacman
-require_binary curl
-require_binary gunzip
 
 if [[ -z "$aur_helper" ]]; then
     echo "warning: no supported aur helper found — aur packages cannot be interacted with"

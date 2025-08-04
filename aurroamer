@@ -43,10 +43,11 @@ require_binary curl
 require_binary gunzip
 
 cleanup() {
-    rm -f "$aurpackages" "$repopackages" "$total"
+    rm -rf "$aurpackages" "$repopackages" "$total" "$pkgbuild" > /dev/null
 }
 trap 'cleanup; exit 130' INT
 trap 'cleanup' EXIT
+pkgbuild=""
 
 detect_aur_helper() {
     for helper in yay paru trizen pikaur; do
@@ -283,6 +284,7 @@ aurroamer - browse AUR and official packages with fzf
     aurroamer --edit-ignore     / -ei            open ignore.txt in a text editor
     aurroamer --edit-favorites  / -ef            open favorites.txt in a text editor
     aurroamer --list-hooks      / -lh <hook>     lists given hook content or all hook names if run with no args
+    aurroamer --open-pkgbuild    / -ob <pkg>      open the pkgbuild for given package
 
   hint: to select multiple packages in fzf press tab
   hint:
@@ -318,6 +320,34 @@ if [[ "${1-}" == "--preview" || "${1-}" == "-p" ]]; then
         echo "error: package '$pkgname' not found in cache"
         exit 1
     fi
+fi
+
+if [[ "${1-}" == "--open-pkgbuild" || "${1-}" == "-ob" ]]; then
+    pkg="${2-}"
+    if [[ -z "$pkg" ]]; then
+        echo "error: no package name provided"
+        exit 1
+    fi
+
+    editor="${EDITOR:-nano}"
+
+    echo "getting PKGBUILD for '$pkg'"
+
+    pkgbuild="$(mktemp -d)"
+    cd "$pkgbuild"
+
+    if "$aur_helper" -G "$pkg" --quiet; then
+        cd "$pkg" || exit 1
+        echo "done, opening PKGBUILD for $pkg"
+        sleep 1.5
+        "$editor" PKGBUILD
+        rm -rf "$pkgbuild"
+    else
+        echo "failed to get PKGBUILD for $pkg"
+        rm -rf "$pkgbuild"
+        exit 1
+    fi
+   exit
 fi
 
 if [[ "${1-}" == "--install" || "${1-}" == "-i" ]]; then
@@ -396,9 +426,10 @@ fi
 generate_fzf_input "$mode"
 echo
 while true; do
-if ! $(echo "$fzf_input" | fzf --prompt="Search >> " --multi); then
-  echo "fzf exited or failed"
-  exit
+selection=$(echo "$fzf_input" | fzf --prompt="Search >> " --multi)
+if [[ -z "$selection" ]]; then
+    echo "no selection made or fzf exited"
+    exit
 fi
     [[ -z "$selection" ]] && exit 0
 

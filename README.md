@@ -36,3 +36,7 @@ for basic usage instructions, run
 ```bash
 aurroamer --help
 ```
+## notes
+this is 900+ lines of bash and expanding, and it still works (as far as i know)
+no, i cant tell you why i made this in bash of all things
+refrain from looking too closely

@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: MIT
 set -euo pipefail
 
-VERSION="2.2.0-7"
+VERSION="2.1.0-7"
 if [[ "${1-}" == "--version" || "${1-}" == "-v" ]]; then
     echo "aurroamer $VERSION"
     exit 0

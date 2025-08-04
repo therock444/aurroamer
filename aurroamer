@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: MIT
 set -euo pipefail
 
-VERSION="2.2.0-1"
+VERSION="2.2.0-7"
 if [[ "${1-}" == "--version" || "${1-}" == "-v" ]]; then
     echo "aurroamer $VERSION"
     exit 0
@@ -34,51 +34,62 @@ cleanup() {
 trap 'cleanup; exit 130' INT
 trap 'cleanup' EXIT
 
-download_aur_list() {
-    echo "downloading list of all known aur packages"
-    if ! curl -Lsk https://aur.archlinux.org/packages.gz | gunzip > "$aurpackages"; then
-        echo "failed to fetch aur packages"
-        exit 1
-    fi
-    mkdir -p "$(dirname "$cachedaur")"
-    cp "$aurpackages" "$cachedaur"
-}
-
-load_aur_cache() {
-    if [[ -f "$cachedaur" ]]; then
-        last_modified_days=$(($(date +%s) - $(stat -c %Y "$cachedaur")))
-        if (( last_modified_days > 259200 )); then  # 3 days = 259200 seconds
-            echo "aur cache older than 3 days, refreshing"
-            download_aur_list
-            return
+load_cache() {
+    for source in aur repo; do
+        if [[ "$source" == "aur" ]]; then
+            cachefile="$cachedaur"
+            outpath="$aurpackages"
+            fetch_cmd="curl -Lsk https://aur.archlinux.org/packages.gz | gunzip > \"$outpath\""
+            fetch_msg="downloading list of all known aur packages"
+        else
+            cachefile="$repo_cache"
+            outpath="$repopackages"
+            fetch_cmd="pacman -Slq > \"$outpath\""
+            fetch_msg="downloading list of all official repo packages"
         fi
 
-        if [[ "$fastmode" == true ]]; then
-            cp "$cachedaur" "$aurpackages"
-            echo "aur cache last updated: $(stat -c %y "$cachedaur")"
-        elif [ -t 0 ]; then
-            echo "cached aur package list found"
-            echo "use cached list instead of downloading? it may be outdated [Y/n]"
-            usecache=""
-            read -rp ">> " usecache
-            usecache="${usecache:-y}"
-            if [[ ! "$usecache" =~ ^[Nn]$ ]]; then
-                cp "$cachedaur" "$aurpackages"
+        if [[ -f "$cachefile" ]]; then
+            last_modified_sec=$(stat -c %Y "$cachefile")
+            last_modified_fmt=$(date -d @"$last_modified_sec" "+%Y-%m-%d %H:%M")
+            age_seconds=$(($(date +%s) - last_modified_sec))
+
+            if (( age_seconds > 259200 )); then
+                echo "$source cache is older than 3 days (last updated: $last_modified_fmt)"
+                if [[ "$fastmode" == true ]]; then
+                    echo "using stale $source cache due to fast mode"
+                elif [ -t 0 ]; then
+                    read -rp ">> " usecache
+                    usecache="${usecache:-y}"
+                    if [[ "$usecache" =~ ^[Nn]$ ]]; then
+                        echo "$fetch_msg"
+                        if ! eval "$fetch_cmd"; then
+                            echo "failed to fetch $source package list"
+                            exit 1
+                        fi
+                        cp "$outpath" "$cachefile"
+                        continue
+                    fi
+                fi
+                cp "$cachefile" "$outpath"
             else
-                download_aur_list
+                echo "using $source cache (last updated: $last_modified_fmt)"
+                cp "$cachefile" "$outpath"
             fi
         else
-            cp "$cachedaur" "$aurpackages"
+            if [[ "$fastmode" == true ]]; then
+                echo "$source cache not found — fast mode requires existing cache"
+                echo "tip: run 'aurroamer --refresh' to create the cache first."
+                exit 1
+            fi
+            echo "no cached $source package list found — fetching..."
+            echo "$fetch_msg"
+            if ! eval "$fetch_cmd"; then
+                echo "failed to fetch $source package list"
+                exit 1
+            fi
+            cp "$outpath" "$cachefile"
         fi
-    else
-        if [[ "$fastmode" == true ]]; then
-            echo "aur cache not found, fast mode requires existing cache"
-            echo "tip: run 'aurroamer --refresh' to create the cache first."
-            exit 1
-        fi
-        echo "no cached aur package list found"
-        download_aur_list
-    fi
+    done
 }
 
 preview_package() {
@@ -145,14 +156,6 @@ run_post_install_hook() {
     fi
 }
 
-fetch_official_packages() {
-    if ! pacman -Slq > "$repopackages"; then
-        echo "failed to get official packages"
-        exit 1
-    fi
-    cp "$repopackages" "$repo_cache"
-}
-
 require_binary() {
     if ! command -v "$1" > /dev/null; then
         echo "error: required binary '$1' is not installed"
@@ -163,7 +166,7 @@ require_binary() {
 if [[ "${1-}" == "--refresh" || "${1-}" == "-r" ]]; then
     echo "refreshing aur cache"
     aurpackages=$(mktemp)
-    download_aur_list > /dev/null
+    load_cache > /dev/null
     echo "refreshing repo cache"
     pacman -Slq > "$repo_cache"
     echo "cache refreshed"
@@ -183,7 +186,7 @@ aurroamer - browse AUR and official packages with fzf
     aurroamer --search  / -s <term>      search for packages by name
     aurroamer --preview / -p <name>      preview given package info
     aurroamer --install / -i <name>      install given package
-    aurroamer --fast    / -f             uses both caches speeding up start time
+    aurroamer --fast    / -f             uses both caches even if theyre old
 
   hint: to select multiple packages in fzf press tab
   hint:
@@ -242,20 +245,8 @@ if [[ "${1-}" == "--fast" || "${1-}" == "-f" ]]; then
     echo "fast mode: using cached package lists"
 fi  
 
-load_aur_cache
+load_cache
 
-if [[ "$fastmode" != true ]]; then
-    fetch_official_packages
-else
-    if [[ -f "$repo_cache" ]]; then
-        cp "$repo_cache" "$repopackages"
-        echo "repo cache last updated: $(stat -c %y "$repo_cache" 2>/dev/null)"
-    else
-        echo "repo cache not found, fast mode requires existing cache"
-        echo "tip: run 'aurroamer --refresh' to create the cache first."
-        exit 1
-    fi
-fi
 
 if ! [ -t 1 ]; then
     echo "error: aurroamer requires an interactive terminal"
@@ -416,7 +407,8 @@ while true; do
                 7)
                     clear
     	            echo "refreshing package lists"
-    		    download_aur_list
+    		    load_cache
+    		    generate_fzf_input "$mode"
     		    pacman -Slq > "$repopackages"
     		    sort -o "$aurpackages" "$aurpackages"
     	            sort -o "$repopackages" "$repopackages"
@@ -461,7 +453,8 @@ while true; do
                 2)
                     clear
     	            echo "refreshing package lists"
-    		    download_aur_list
+    		    load_cache
+    		    generate_fzf_input "$mode"
     		    pacman -Slq > "$repopackages"
     		    sort -o "$aurpackages" "$aurpackages"
     		    sort -o "$repopackages" "$repopackages"

@@ -71,6 +71,11 @@ load_aur_cache() {
             cp "$cachedaur" "$aurpackages"
         fi
     else
+        if [[ "$fastmode" == true ]]; then
+            echo "aur cache not found, fast mode requires existing cache"
+            echo "tip: run 'aurroamer --refresh' to create the cache first."
+            exit 1
+        fi
         echo "no cached aur package list found"
         download_aur_list
     fi
@@ -156,9 +161,10 @@ require_binary() {
 }
 
 if [[ "${1-}" == "--refresh" || "${1-}" == "-r" ]]; then
-    echo "refreshing package list"
+    echo "refreshing aur cache"
     aurpackages=$(mktemp)
-    download_aur_list
+    download_aur_list > /dev/null
+    echo "refreshing repo cache"
     pacman -Slq > "$repo_cache"
     echo "cache refreshed"
     exit 0
@@ -190,7 +196,7 @@ EOF
 fi
 
 if [[ "${1-}" == "--clear" || "${1-}" == "-c" ]]; then
-    echo "deleted cached package list"
+    echo "deleted cached package lists"
     rm -f "$cachedaur" "$repo_cache" 2>/dev/null || echo "no cache to delete, or other error"
     exit 0
 fi
@@ -234,7 +240,7 @@ fastmode=false
 if [[ "${1-}" == "--fast" || "${1-}" == "-f" ]]; then
     fastmode=true
     echo "fast mode: using cached package lists"
-fi
+fi  
 
 load_aur_cache
 

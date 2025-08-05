@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # aurroamer - package browser in bash, because why not
 # copyright (c) 2025 therock
-# 949 lines, this is bash what am i doing
+# 954 lines, this is bash what am i doing
 # SPDX-License-Identifier: MIT
 set -euo pipefail
 
 fastmode=false
 
-VERSION="3.0.0-4"
+VERSION="3.0.0-5"
 
 if [[ "${1-}" == "--version" || "${1-}" == "-v" ]]; then
     echo "aurroamer $VERSION"
@@ -509,11 +509,15 @@ fi
 
 if [[ "${1-}" == "--refresh" || "${1-}" == "-r" ]]; then
     echo "refreshing aur cache"
-    aurpackages=$(mktemp)
-    load_cache > /dev/null
+    if ! curl -Lsk https://aur.archlinux.org/packages.gz | gunzip > "$cachedaur"; then
+        echo "failed to update AUR cache"
+        exit 1
+    fi
     echo "refreshing repo cache"
-    pacman -Slq > "$repo_cache"
-    cp "$repopackages" "$repo_cache"
+    if ! pacman -Slq > "$repo_cache"; then
+        echo "failed to update repo cache"
+        exit 1
+    fi
     echo "cache refreshed"
     exit 0
 fi
